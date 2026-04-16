@@ -11,7 +11,7 @@ interface RoomCardProps {
 export default function RoomCard({ room, imageUrl }: RoomCardProps) {
   return (
     <div className="border rounded-xl p-4 shadow-sm hover:shadow-md transition">
-      <div className="relative aspect-[4/3] w-full bg-gray-100">
+      <div className="relative aspect-video w-full bg-gray-100">
         <Image
           src={imageUrl || '/placeholder-room.jpg'} // Hiện ảnh mặc định nếu không có ảnh
           alt={room.room_description || 'Ảnh phòng trọ'}
