@@ -5,11 +5,15 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "images.unsplash.com", // Thêm dòng này để cho phép ảnh từ Unsplash
+        hostname: "images.unsplash.com",
       },
       {
         protocol: "https",
-        hostname: "koxwdeaudncnyfzhbnmi.supabase.co", // Hostname Supabase của Nga
+        hostname: "koxwdeaudncnyfzhbnmi.supabase.co",
+      },
+      {
+        protocol: "https",
+        hostname: "www.pexels.com",
       },
     ],
   },

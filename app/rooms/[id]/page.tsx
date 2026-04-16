@@ -16,9 +16,7 @@ interface RoomDetail {
     room_price: number | null;
     room_area: number | null;
     room_status: boolean | null;
-    vr_url: string | null;
     roomimages?: RoomImage[]; // Xác định rõ đây là mảng đối tượng RoomImage
-    room_types?: { room_type_name: string };
 }
 
 export default async function RoomDetailPage({ params }: { params: { id: string } }) {
@@ -54,7 +52,7 @@ export default async function RoomDetailPage({ params }: { params: { id: string 
     const vrImage = images.find((img) => img.is_360);
     const normalImages = images.filter((img) => !img.is_360);
 
-    const vrUrl = room.vr_url || vrImage?.image_url || "https://360vr.vn/projects/HCM-drone-360vr/";
+    const vrUrl = vrImage?.image_url || "https://360vr.vn/projects/HCM-drone-360vr/";
 
     return (
         <div className="max-w-6xl mx-auto p-4 md:p-6 space-y-8">
@@ -62,7 +60,7 @@ export default async function RoomDetailPage({ params }: { params: { id: string 
             <div className="space-y-2">
                 <div className="flex items-center gap-2">
                     <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2.5 py-1 rounded-md uppercase">
-                        {room.room_types?.room_type_name || 'Phòng trọ'}
+                        Phòng trọ
                     </span>
                     <span className={`text-xs font-medium px-2 py-1 rounded-md ${room.room_status ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                         {room.room_status ? '● Đang trống' : '● Đã cho thuê'}
@@ -117,6 +115,7 @@ export default async function RoomDetailPage({ params }: { params: { id: string 
                                             src={img.image_url}
                                             alt="Ảnh phòng"
                                             fill
+                                            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                                             className="object-cover group-hover:scale-110 transition-transform duration-500"
                                         />
                                     </div>
