@@ -6,6 +6,8 @@ const BUCKET_NAME = "room-images";
 
 /**
  * Ensure bucket exists, create if not
+ * NOTE: Anon key may not have permission to create buckets
+ * If bucket doesn't exist and can't be created, user should visit /setup
  */
 const ensureBucket = async () => {
   try {
@@ -13,8 +15,16 @@ const ensureBucket = async () => {
     const { data: buckets, error: listError } = await supabase.storage.listBuckets();
 
     if (listError) {
-      console.warn(`[Storage] Could not list buckets:`, listError.message);
-      return false;
+      console.error(`[Storage] ❌ List buckets error:`, listError);
+      console.error(`[Storage] Error details:`, {
+        message: listError.message,
+        status: (listError as any).status,
+        statusText: (listError as any).statusText,
+      });
+      // If we can't list buckets, we can't verify if bucket exists
+      // But it might still work - try to proceed
+      console.warn(`[Storage] Can't list buckets, but will try to upload anyway`);
+      return true;
     }
 
     const bucketExists = buckets?.some((b) => b.name === BUCKET_NAME);
@@ -35,19 +45,40 @@ const ensureBucket = async () => {
     );
 
     if (createError) {
+      console.error(`[Storage] ❌ Create bucket error:`, createError);
+      console.error(`[Storage] Error details:`, {
+        message: createError.message,
+        status: (createError as any).status,
+        statusText: (createError as any).statusText,
+      });
+
       // Check if error is "bucket already exists" (race condition)
       if (createError.message.includes("already exists")) {
         console.log(`[Storage] ✅ Bucket '${BUCKET_NAME}' exists (created by another process)`);
         return true;
       }
-      console.error(`[Storage] Failed to create bucket:`, createError.message);
+
+      // If permission denied, bucket might still exist from before
+      // Let's try to upload anyway and see what happens
+      if (
+        createError.message.includes("permission") ||
+        createError.message.includes("unauthorized") ||
+        (createError as any).status === 401 ||
+        (createError as any).status === 403
+      ) {
+        console.warn(
+          `[Storage] ⚠️ Permission denied to create bucket, but bucket might exist. Will try to upload.`
+        );
+        return true; // Let upload attempt, it will fail with clear message if bucket doesn't exist
+      }
+
       return false;
     }
 
     console.log(`[Storage] ✅ Bucket '${BUCKET_NAME}' created successfully`);
     return true;
   } catch (err: any) {
-    console.error(`[Storage] Unexpected error in ensureBucket:`, err.message);
+    console.error(`[Storage] ❌ Unexpected error in ensureBucket:`, err);
     return false;
   }
 };
@@ -75,9 +106,10 @@ export const uploadRoomImage = async (
   // Ensure bucket exists and is ready
   const bucketReady = await ensureBucket();
   if (!bucketReady) {
-    console.error("[Storage] Failed to ensure bucket is ready");
+    const msg = `[Storage] Không thể khởi tạo bucket. Kiểm tra console logs để biết chi tiết lỗi.`;
+    console.error(msg);
     return {
-      error: `Không thể khởi tạo storage. Vui lòng liên hệ quản trị viên.`,
+      error: msg,
     };
   }
 
@@ -88,6 +120,18 @@ export const uploadRoomImage = async (
 
   if (error) {
     console.error("[Storage] Upload error:", error);
+
+    // Check if bucket doesn't exist
+    if (
+      error.message.includes("bucket") ||
+      error.message.includes("not found") ||
+      error.message.includes("does not exist")
+    ) {
+      return {
+        error: `Bucket chưa được khởi tạo. Vui lòng vào /setup để khởi tạo storage.`,
+      };
+    }
+
     return { error: `Lỗi upload: ${error.message}` };
   }
 
@@ -194,7 +238,8 @@ export const uploadMultipleRoomImages = async (
   // Ensure bucket exists once for all uploads
   const bucketReady = await ensureBucket();
   if (!bucketReady) {
-    const error = "Không thể khởi tạo storage. Vui lòng liên hệ quản trị viên.";
+    const error = `Không thể khởi tạo storage. Vui lòng vào /setup để cấu hình.`;
+    console.error(`[Storage]`, error);
     return {
       success: false,
       uploads: [],
