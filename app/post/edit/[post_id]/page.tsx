@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, use } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import ImageUploader from "@/components/common/ImageUploader";
 import { useRouter } from "next/navigation";
@@ -30,9 +30,9 @@ interface FormData {
     room_status: boolean;
 }
 
-export default function EditPostPage({ params }: { params: { post_id: string } }) {
+export default function EditPostPage({ params }: { params: Promise<{ post_id: string }> }) {
     const router = useRouter();
-    const postId = params.post_id;
+    const { post_id: postId } = use(params);
 
     const [user, setUser] = useState<any>(null);
     const [loading, setLoading] = useState(true);
