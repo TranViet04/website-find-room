@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabaseClient";
 
 const ALLOWED_FORMATS = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
-const BUCKET_NAME = "room-images";
+const BUCKET_NAME = "roomImgNot360";
 
 /**
  * Ensure bucket exists, create if not

@@ -33,17 +33,17 @@ export function RootLayoutClient({
 
         console.log("[Storage Init] 📦 Current buckets:", buckets?.map(b => b.name) || []);
 
-        const bucketExists = buckets?.some((b) => b.name === "room-images");
+        const bucketExists = buckets?.some((b) => b.name === "roomImgNot360");
 
         if (bucketExists) {
-          console.log("[Storage Init] ✅ Bucket 'room-images' already exists");
+          console.log("[Storage Init] ✅ Bucket 'roomImgNot360' already exists");
           return;
         }
 
         // Create bucket if it doesn't exist
-        console.log("[Storage Init] 📁 Creating bucket 'room-images'...");
+        console.log("[Storage Init] 📁 Creating bucket 'roomImgNot360'...");
         const { data, error: createError } = await supabase.storage.createBucket(
-          "room-images",
+          "roomImgNot360",
           {
             public: true,
             fileSizeLimit: 52428800, // 50MB
@@ -60,7 +60,7 @@ export function RootLayoutClient({
           return;
         }
 
-        console.log("[Storage Init] ✅ Bucket 'room-images' created successfully");
+        console.log("[Storage Init] ✅ Bucket 'roomImgNot360' created successfully");
 
         // Wait a moment to ensure bucket is ready
         await new Promise((resolve) => setTimeout(resolve, 1000));
