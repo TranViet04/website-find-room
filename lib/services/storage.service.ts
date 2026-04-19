@@ -24,7 +24,9 @@ export const uploadRoomImage = async (
   const fileExt = file.name.split(".").pop();
   const timestamp = Date.now();
   const random = Math.random().toString(36).substring(2, 9);
-  const fileName = `${roomId}/${timestamp}-${random}.${fileExt}`;
+  // Add 360 prefix if 360 image
+  const prefix = is360 ? "360_" : "";
+  const fileName = `${roomId}/${prefix}${timestamp}-${random}.${fileExt}`;
 
   // Upload file to bucket
   const { data, error } = await supabase.storage
@@ -53,7 +55,7 @@ export const uploadRoomImage = async (
     data: { publicUrl },
   } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
 
-  // Save URL to database
+  // Save URL to database with is_360 flag
   const { data: imageData, error: dbError } = await supabase
     .from("roomimages")
     .insert([{ room_id: roomId, image_url: publicUrl, is_360: is360 }])
