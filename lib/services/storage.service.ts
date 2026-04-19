@@ -58,6 +58,14 @@ const ensureBucket = async () => {
         return true;
       }
 
+      // RLS policy blocked creation - bucket might exist, let upload attempt
+      if (createError.message.includes("row-level security policy")) {
+        console.warn(
+          `[Storage] ⚠️ RLS policy blocked bucket creation. Bucket must exist already. Will try to upload.`
+        );
+        return true; // Let upload attempt - bucket should exist
+      }
+
       // If permission denied, bucket might still exist from before
       // Let's try to upload anyway and see what happens
       if (
