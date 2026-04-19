@@ -5,88 +5,30 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const BUCKET_NAME = "roomImgNot360";
 
 /**
- * Ensure bucket exists, create if not
- * NOTE: Anon key may not have permission to create buckets
- * If bucket doesn't exist and can't be created, user should visit /setup
+ * Check if bucket exists
+ * NOTE: Does NOT create bucket - bucket must exist in Supabase Storage
  */
-const ensureBucket = async () => {
+const checkBucket = async (): Promise<boolean> => {
   try {
-    // List existing buckets
     const { data: buckets, error: listError } = await supabase.storage.listBuckets();
 
     if (listError) {
-      console.error(`[Storage] ❌ List buckets error:`, listError);
-      console.error(`[Storage] Error details:`, {
-        message: listError.message,
-        status: (listError as any).status,
-        statusText: (listError as any).statusText,
-      });
-      // If we can't list buckets, we can't verify if bucket exists
-      // But it might still work - try to proceed
-      console.warn(`[Storage] Can't list buckets, but will try to upload anyway`);
-      return true;
+      console.error(`[Storage] ❌ Failed to list buckets:`, listError);
+      return false;
     }
 
     const bucketExists = buckets?.some((b) => b.name === BUCKET_NAME);
 
     if (bucketExists) {
-      console.log(`[Storage] ✅ Bucket '${BUCKET_NAME}' already exists`);
+      console.log(`[Storage] ✅ Bucket '${BUCKET_NAME}' exists`);
       return true;
     }
 
-    // Bucket doesn't exist, try to create it
-    console.log(`[Storage] 📁 Creating bucket '${BUCKET_NAME}'...`);
-    const { data, error: createError } = await supabase.storage.createBucket(
-      BUCKET_NAME,
-      {
-        public: true,
-        fileSizeLimit: 52428800, // 50MB
-      }
-    );
-
-    if (createError) {
-      console.error(`[Storage] ❌ Create bucket error:`, createError);
-      console.error(`[Storage] Error details:`, {
-        message: createError.message,
-        status: (createError as any).status,
-        statusText: (createError as any).statusText,
-      });
-
-      // Check if error is "bucket already exists" (race condition)
-      if (createError.message.includes("already exists")) {
-        console.log(`[Storage] ✅ Bucket '${BUCKET_NAME}' exists (created by another process)`);
-        return true;
-      }
-
-      // RLS policy blocked creation - bucket might exist, let upload attempt
-      if (createError.message.includes("row-level security policy")) {
-        console.warn(
-          `[Storage] ⚠️ RLS policy blocked bucket creation. Bucket must exist already. Will try to upload.`
-        );
-        return true; // Let upload attempt - bucket should exist
-      }
-
-      // If permission denied, bucket might still exist from before
-      // Let's try to upload anyway and see what happens
-      if (
-        createError.message.includes("permission") ||
-        createError.message.includes("unauthorized") ||
-        (createError as any).status === 401 ||
-        (createError as any).status === 403
-      ) {
-        console.warn(
-          `[Storage] ⚠️ Permission denied to create bucket, but bucket might exist. Will try to upload.`
-        );
-        return true; // Let upload attempt, it will fail with clear message if bucket doesn't exist
-      }
-
-      return false;
-    }
-
-    console.log(`[Storage] ✅ Bucket '${BUCKET_NAME}' created successfully`);
-    return true;
+    console.error(`[Storage] ❌ Bucket '${BUCKET_NAME}' does not exist`);
+    console.error(`[Storage] ℹ️  Please create bucket '${BUCKET_NAME}' in Supabase Storage first`);
+    return false;
   } catch (err: any) {
-    console.error(`[Storage] ❌ Unexpected error in ensureBucket:`, err);
+    console.error(`[Storage] ❌ Error checking bucket:`, err);
     return false;
   }
 };
@@ -111,13 +53,11 @@ export const uploadRoomImage = async (
   const random = Math.random().toString(36).substring(2, 9);
   const fileName = `${roomId}/${timestamp}-${random}.${fileExt}`;
 
-  // Ensure bucket exists and is ready
-  const bucketReady = await ensureBucket();
+  // Check bucket exists
+  const bucketReady = await checkBucket();
   if (!bucketReady) {
-    const msg = `[Storage] Không thể khởi tạo bucket. Kiểm tra console logs để biết chi tiết lỗi.`;
-    console.error(msg);
     return {
-      error: msg,
+      error: `Bucket '${BUCKET_NAME}' không tồn tại. Vui lòng tạo bucket này trong Supabase Storage.`,
     };
   }
 
@@ -243,10 +183,10 @@ export const uploadMultipleRoomImages = async (
     return { success: true, uploads: [], errors: [] };
   }
 
-  // Ensure bucket exists once for all uploads
-  const bucketReady = await ensureBucket();
+  // Check bucket exists once for all uploads
+  const bucketReady = await checkBucket();
   if (!bucketReady) {
-    const error = `Không thể khởi tạo storage. Vui lòng vào /setup để cấu hình.`;
+    const error = `Bucket '${BUCKET_NAME}' không tồn tại. Vui lòng tạo bucket này trong Supabase Storage.`;
     console.error(`[Storage]`, error);
     return {
       success: false,
