@@ -1,188 +1,278 @@
-"use client"
+"use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
 export default function Navbar() {
-  const router = useRouter();
-  const [showFilter, setShowFilter] = useState(false); // Điều khiển hiện/ẩn bộ lọc
-  const [showMap, setShowMap] = useState(false); // State để mở bản đồ
-  const [user, setUser] = useState<any>(null);
+    const router = useRouter();
+    const pathname = usePathname();
+    const [user, setUser] = useState<any>(null);
+    const [userRole, setUserRole] = useState<string | null>(null);
+    const [unreadCount, setUnreadCount] = useState(0);
+    const [mobileOpen, setMobileOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState("");
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      setUser(user);
-    });
+    useEffect(() => {
+        const initAuth = async () => {
+            const { data, error } = await supabase.auth.getUser();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
+            if (error) {
+                if (error.message?.includes("Refresh Token Not Found")) {
+                    await supabase.auth.signOut({ scope: "local" });
+                }
+                setUser(null);
+                setUserRole(null);
+                setUnreadCount(0);
+                return;
+            }
 
-    return () => authListener?.subscription?.unsubscribe();
-  }, []);
+            const currentUser = data.user;
+            setUser(currentUser);
+            if (currentUser) {
+                await fetchUserRole(currentUser.id);
+                await fetchUnreadCount(currentUser.id);
+            }
+        };
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    router.push("/");
-  };
+        void initAuth();
 
-  return (
-    <nav className="bg-white shadow-md sticky top-0 z-[50]">
-      <div className="max-w-7xl mx-auto px-4 md:px-6 py-3">
-        <div className="flex justify-between items-center gap-4">
-          {/* LOGO */}
-          <Link href="/" className="text-2xl font-black text-blue-600 shrink-0">
-            FindRoom
-          </Link>
+        const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+            setUser(session?.user ?? null);
+            if (session?.user) {
+                void fetchUserRole(session.user.id);
+                void fetchUnreadCount(session.user.id);
+            } else {
+                setUserRole(null);
+                setUnreadCount(0);
+            }
+        });
 
-          {/* SEARCH BAR */}
-          <div className="flex-grow max-w-xl relative">
-            <input
-              type="text"
-              placeholder="Tìm khu vực, tên đường..."
-              className="w-full bg-gray-100 border-none rounded-2xl py-2.5 pl-11 pr-20 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-            />
-            {/* Nút Tìm kiếm (Click vào đây để hiện bộ lọc) */}
-            <button
-              onClick={() => setShowFilter(!showFilter)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 bg-blue-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-blue-700 transition-all"
-            >
-              Bộ lọc
-            </button>
-          </div>
+        return () => authListener?.subscription?.unsubscribe();
+    }, []);
 
-          {/* MENU DESKTOP */}
-          <ul className="hidden lg:flex space-x-6 text-gray-600 font-bold text-sm uppercase">
-            <li><Link href="/">Trang chủ</Link></li>
-            {!user && <li><Link href="/post">Đăng tin</Link></li>}
-            {user ? (
-              <li className="flex items-center gap-3">
-                <Link href="/post" className="text-gray-600 hover:text-blue-700">Đăng tin</Link>
-                <span className="text-gray-300">|</span>
-                <Link href="/manage-posts" className="text-blue-600 hover:text-blue-700">Quản lý bài đăng</Link>
-                <span className="text-gray-300">|</span>
-                <Link href="/profile" className="text-blue-600 hover:text-blue-700">Hồ sơ</Link>
-                <span className="text-gray-300">|</span>
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  className="text-blue-600 hover:text-blue-700"
-                >
-                  ĐĂNG XUẤT
-                </button>
-              </li>
-            ) : (
-              <li className="flex items-center gap-2">
-                <Link href="/auth/login" className="text-blue-600 hover:text-blue-700">Đăng nhập</Link>
-                <span className="text-gray-300">|</span>
-                <Link href="/auth/register" className="text-blue-600 hover:text-blue-700">Đăng ký</Link>
-              </li>
+    const fetchUserRole = async (userId: string) => {
+        const { data } = await supabase
+            .from("users")
+            .select("user_role")
+            .eq("user_id", userId)
+            .single();
+        if (data) setUserRole(data.user_role);
+    };
+
+    const fetchUnreadCount = async (userId: string) => {
+        const { data: conversations } = await supabase
+            .from("conversations")
+            .select("conversation_id")
+            .or(`renter_id.eq.${userId},owner_id.eq.${userId}`);
+
+        if (!conversations || conversations.length === 0) {
+            setUnreadCount(0);
+            return;
+        }
+
+        const conversationIds = conversations.map((item) => item.conversation_id);
+        const { count } = await supabase
+            .from("messages")
+            .select("message_id", { count: "exact", head: true })
+            .in("conversation_id", conversationIds)
+            .neq("sender_user_id", userId)
+            .eq("is_read", false)
+            .is("deleted_at", null);
+
+        setUnreadCount(count ?? 0);
+    };
+
+    const handleSignOut = async () => {
+        await supabase.auth.signOut();
+        setUser(null);
+        setUserRole(null);
+        setUnreadCount(0);
+        setMobileOpen(false);
+        router.push("/");
+        router.refresh();
+    };
+
+    const handleSearch = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (searchQuery.trim()) {
+            router.push(`/rooms?search=${encodeURIComponent(searchQuery)}`);
+            setSearchQuery("");
+        }
+    };
+
+    const isAuthPage = pathname?.startsWith("/auth");
+    if (isAuthPage) return null;
+
+    return (
+        <nav className="sticky top-0 z-[50] border-b border-app bg-white/95 shadow-sm backdrop-blur">
+            <div className="mx-auto max-w-7xl px-4 md:px-6">
+                <div className="flex h-16 items-center justify-between gap-4">
+                    <Link href="/" className="shrink-0 text-2xl font-black text-blue-600 transition-all duration-[180ms] ease-[var(--ease-out-quart)] hover:scale-[1.02] hover:text-blue-700 active:scale-[0.99]">
+                        FindRoom
+                    </Link>
+
+                    <form onSubmit={handleSearch} className="hidden max-w-md flex-grow md:block">
+                        <div className="flex items-center rounded-2xl bg-slate-100 px-4 py-2.5 transition-all duration-[180ms] ease-[var(--ease-out-quart)] focus-within:bg-white focus-within:ring-4 focus-within:ring-blue-500/10 focus-within:shadow-[0_0_0_1px_rgba(37,99,235,0.14),0_0_0_8px_rgba(37,99,235,0.06)]">
+                            <span className="mr-2 text-gray-400 transition-colors duration-[180ms] ease-[var(--ease-out-quart)]">🔍</span>
+                            <input
+                                type="text"
+                                placeholder="Tìm phòng, khu vực..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="flex-1 bg-transparent text-sm font-medium text-slate-700 placeholder:text-slate-400 focus:outline-none"
+                            />
+                        </div>
+                    </form>
+
+                    <div className="hidden items-center gap-1 lg:flex">
+                        <NavLink href="/rooms" active={pathname === "/rooms"}>Tìm phòng</NavLink>
+
+                        {user ? (
+                            <>
+                                <NavLink href="/chat" active={pathname?.startsWith("/chat")} badge={unreadCount > 0 ? unreadCount : undefined}>💬 Hộp thư</NavLink>
+                                {userRole === 'owner' && (
+                                    <NavLink href="/post" active={pathname === "/post"}>Đăng tin</NavLink>
+                                )}
+                                <NavLink href="/favorites" active={pathname === "/favorites"}>❤️ Đã lưu</NavLink>
+                                <NavLink href="/manage-posts" active={pathname === "/manage-posts"}>Quản lý</NavLink>
+                                {userRole === 'admin' && (
+                                    <NavLink href="/admin/reports" active={pathname?.startsWith("/admin/reports")}>🛡️ Report</NavLink>
+                                )}
+                                <NavLink href="/profile" active={pathname === "/profile"}>Hồ sơ</NavLink>
+                                <button
+                                    onClick={handleSignOut}
+                                    className="ml-2 rounded-xl px-4 py-2 text-sm font-bold text-red-500 transition-all duration-[180ms] ease-[var(--ease-out-quart)] hover:bg-red-50 hover:scale-[1.01] active:scale-[0.98]"
+                                >
+                                    Đăng xuất
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <Link
+                                    href="/auth/login"
+                                    className="rounded-xl px-4 py-2 text-sm font-bold text-slate-600 transition-all duration-[180ms] ease-[var(--ease-out-quart)] hover:bg-slate-100 hover:text-slate-900 hover:scale-[1.01] active:scale-[0.98]"
+                                >
+                                    Đăng nhập
+                                </Link>
+                                <Link
+                                    href="/auth/register"
+                                    className="ml-1 rounded-xl bg-blue-600 px-5 py-2 text-sm font-black text-white shadow-md shadow-blue-200 transition-all duration-[180ms] ease-[var(--ease-out-quart)] hover:bg-blue-700 hover:scale-[1.01] active:scale-[0.98]"
+                                >
+                                    Đăng ký
+                                </Link>
+                            </>
+                        )}
+                    </div>
+
+                    <button
+                        onClick={() => setMobileOpen(!mobileOpen)}
+                        className="rounded-xl p-2 transition-all duration-[180ms] ease-[var(--ease-out-quart)] hover:bg-slate-100 active:scale-[0.98] lg:hidden"
+                    >
+                        <div className="w-5 space-y-1">
+                            <span className={`block h-0.5 bg-gray-600 transition-all ${mobileOpen ? 'rotate-45 translate-y-1.5' : ''}`} />
+                            <span className={`block h-0.5 bg-gray-600 transition-all ${mobileOpen ? 'opacity-0' : ''}`} />
+                            <span className={`block h-0.5 bg-gray-600 transition-all ${mobileOpen ? '-rotate-45 -translate-y-1.5' : ''}`} />
+                        </div>
+                    </button>
+                </div>
+            </div>
+
+            {mobileOpen && (
+                <div className="animate-[fadeUp_220ms_var(--ease-out-quart)_both] border-t border-gray-100 bg-white px-4 py-4 space-y-1 lg:hidden">
+                    <form onSubmit={handleSearch} className="mb-3">
+                        <div className="flex items-center bg-gray-50 rounded-2xl py-2 pl-3 pr-1">
+                            <span className="text-gray-400 text-lg mr-2">🔍</span>
+                            <input
+                                type="text"
+                                placeholder="Tìm phòng..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="flex-1 bg-transparent text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none font-medium"
+                            />
+                            <button
+                                type="submit"
+                                className="px-3 py-2 text-blue-600 hover:bg-gray-100 rounded-xl transition-all"
+                            >
+                                🔎
+                            </button>
+                        </div>
+                    </form>
+
+                    <MobileNavLink href="/rooms" active={pathname === "/rooms"} onClick={() => setMobileOpen(false)}>🏠 Tìm phòng</MobileNavLink>
+
+                    {user ? (
+                        <>
+                            <MobileNavLink href="/chat" active={pathname?.startsWith("/chat")} onClick={() => setMobileOpen(false)} badge={unreadCount > 0 ? unreadCount : undefined}>💬 Hộp thư</MobileNavLink>
+                            {userRole === 'owner' && (
+                                <MobileNavLink href="/post" active={pathname === "/post"} onClick={() => setMobileOpen(false)}>📝 Đăng tin</MobileNavLink>
+                            )}
+                            <MobileNavLink href="/favorites" active={pathname === "/favorites"} onClick={() => setMobileOpen(false)}>❤️ Tin đã lưu</MobileNavLink>
+                            <MobileNavLink href="/manage-posts" active={pathname === "/manage-posts"} onClick={() => setMobileOpen(false)}>📋 Quản lý bài đăng</MobileNavLink>
+                            {userRole === 'admin' && (
+                                <MobileNavLink href="/admin/reports" active={pathname?.startsWith("/admin/reports")} onClick={() => setMobileOpen(false)}>🛡️ Report</MobileNavLink>
+                            )}
+                            <MobileNavLink href="/profile" active={pathname === "/profile"} onClick={() => setMobileOpen(false)}>👤 Hồ sơ của tôi</MobileNavLink>
+                            <button
+                                onClick={handleSignOut}
+                                className="w-full rounded-xl px-4 py-3 text-left text-sm font-bold text-red-500 transition-all duration-[180ms] ease-[var(--ease-out-quart)] hover:bg-red-50 hover:scale-[1.01] active:scale-[0.98]"
+                            >
+                                🚪 Đăng xuất
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <MobileNavLink href="/auth/login" active={pathname === "/auth/login"} onClick={() => setMobileOpen(false)}>Đăng nhập</MobileNavLink>
+                            <div className="pt-2">
+                                <Link
+                                    href="/auth/register"
+                                    onClick={() => setMobileOpen(false)}
+                                    className="block w-full rounded-xl bg-blue-600 px-4 py-3 text-center text-sm font-black text-white transition-all duration-[180ms] ease-[var(--ease-out-quart)] hover:bg-blue-700 hover:scale-[1.01] active:scale-[0.98]"
+                                >
+                                    Đăng ký ngay
+                                </Link>
+                            </div>
+                        </>
+                    )}
+                </div>
             )}
-          </ul>
-        </div>
+        </nav>
+    );
+}
 
-        {/* --------------------------------------------------------- */}
-        {/* BỘ LỌC HIỆN RA SAU KHI ẤN (ACCORDION) */}
-        {/* --------------------------------------------------------- */}
-        <div className={`overflow-hidden transition-all duration-500 ease-in-out ${showFilter ? 'max-h-[400px] mt-4 opacity-100' : 'max-h-0 opacity-0'}`}>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6 bg-blue-50 rounded-[2rem] border border-blue-100">
+function NavLink({ href, children, active = false, badge }: { href: string; children: React.ReactNode; active?: boolean; badge?: number }) {
+    return (
+        <Link
+            href={href}
+            className={`relative rounded-xl px-4 py-2 text-sm font-bold transition-all duration-[180ms] ease-[var(--ease-out-quart)] hover:scale-[1.01] active:scale-[0.98] ${active ? 'bg-slate-100 text-slate-950 shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 hover:shadow-sm'}`}
+        >
+            <span className="inline-flex items-center gap-2">
+                {children}
+                {typeof badge === "number" && badge > 0 && (
+                    <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[11px] font-black leading-none text-white shadow-sm">
+                        {badge > 99 ? "99+" : badge}
+                    </span>
+                )}
+            </span>
+        </Link>
+    );
+}
 
-            {/* Khoảng giá */}
-            <div className="space-y-2">
-              <label className="text-xs font-black text-blue-900 uppercase">Khoảng giá</label>
-              <select className="w-full p-2.5 rounded-xl border-none text-sm bg-white shadow-sm outline-none">
-                <option>Tất cả giá</option>
-                <option>Dưới 2 triệu</option>
-                <option>2 - 5 triệu</option>
-                <option>Trên 5 triệu</option>
-              </select>
-            </div>
-
-            {/* Loại phòng */}
-            <div className="space-y-2">
-              <label className="text-xs font-black text-blue-900 uppercase">Loại phòng</label>
-              <select className="w-full p-2.5 rounded-xl border-none text-sm bg-white shadow-sm outline-none">
-                <option>Tất cả loại</option>
-                <option>Phòng trọ</option>
-                <option>Căn hộ mini</option>
-                <option>Ký túc xá</option>
-              </select>
-            </div>
-
-            {/* Diện tích */}
-            <div className="space-y-2">
-              <label className="text-xs font-black text-blue-900 uppercase">Diện tích</label>
-              <select className="w-full p-2.5 rounded-xl border-none text-sm bg-white shadow-sm outline-none">
-                <option>Tất cả diện tích</option>
-                <option>Dưới 20m²</option>
-                <option>20 - 40m²</option>
-                <option>Trên 40m²</option>
-              </select>
-            </div>
-
-            {/* Nút Áp dụng */}
-            <div className="flex items-end">
-              <button className="w-full bg-blue-600 text-white py-2.5 rounded-xl font-black text-sm hover:shadow-lg hover:shadow-blue-200 transition-all">
-                ÁP DỤNG
-              </button>
-            </div>
-
-            {/* NÚT CHỌN TRÊN BẢN ĐỒ - THIẾT KẾ NỔI BẬT */}
-            <div className="col-span-2 md:col-span-4 border-t border-blue-100 pt-4">
-              <button
-                onClick={() => setShowMap(true)}
-                className="w-full bg-white hover:bg-gray-50 text-blue-600 border-2 border-dashed border-blue-300 py-4 rounded-2xl font-black text-sm flex items-center justify-center gap-3 transition-all active:scale-95"
-              >
-                <span className="text-xl">📍</span>
-                CHỌN VỊ TRÍ TRÊN BẢN ĐỒ TRỰC QUAN
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-      {/* --------------------------------------------------------- */}
-      {/* MODAL BẢN ĐỒ (LIGHTBOX) */}
-      {/* --------------------------------------------------------- */}
-      {showMap && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 md:p-10 animate-in fade-in">
-          <div className="bg-white w-full max-w-5xl h-[80vh] rounded-[3rem] overflow-hidden relative shadow-2xl border-8 border-white">
-
-            {/* Header của Map Modal */}
-            <div className="absolute top-6 left-6 z-10 bg-white/90 backdrop-blur px-6 py-3 rounded-2xl shadow-xl flex items-center gap-4">
-              <span className="text-blue-600 font-black">FindRoom Map</span>
-              <p className="text-xs text-gray-500 font-bold">Di chuyển ghim để tìm phòng quanh HUTECH</p>
-            </div>
-
-            {/* Nút Đóng */}
-            <button
-              onClick={() => setShowMap(false)}
-              className="absolute top-6 right-6 z-10 bg-white w-12 h-12 rounded-full shadow-xl font-bold hover:rotate-90 transition-transform"
-            >
-              ✕
-            </button>
-
-            {/* KHU VỰC NHÚNG MAP (Iframe hoặc Leaflet Component) */}
-            <div className="w-full h-full bg-gray-200">
-              {/* Tạm thời dùng Google Maps Iframe để Nga test giao diện */}
-              <iframe
-                src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3919.5201952559787!2d106.7019!3d10.7711!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x31752f40a76d4531%3A0x759a36a0c8a23912!2zSFVURUNIIC0gxJDhuqFpIGjhu41jIEPDtG5nIG5naOG7hyBUUC5IQ00!5e0!3m2!1svi!2s!4v1713400000000!5m2!1svi!2s"
-                className="w-full h-full border-none"
-                allowFullScreen
-                loading="lazy"
-              ></iframe>
-            </div>
-
-            {/* Footer nút xác nhận */}
-            <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-10">
-              <button className="bg-blue-600 text-white px-10 py-4 rounded-2xl font-black shadow-2xl hover:scale-105 transition-transform active:scale-95">
-                XÁC NHẬN VỊ TRÍ NÀY
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </nav>
-  );
+function MobileNavLink({ href, children, onClick, active = false, badge }: { href: string; children: React.ReactNode; onClick: () => void; active?: boolean; badge?: number }) {
+    return (
+        <Link
+            href={href}
+            onClick={onClick}
+            className={`relative block rounded-xl px-4 py-3 text-sm font-bold transition-all duration-[180ms] ease-[var(--ease-out-quart)] ${active ? 'bg-slate-100 text-slate-950 shadow-sm' : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'}`}
+        >
+            <span className="inline-flex items-center gap-2">
+                {children}
+                {typeof badge === "number" && badge > 0 && (
+                    <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-[11px] font-black leading-none text-white shadow-sm">
+                        {badge > 99 ? "99+" : badge}
+                    </span>
+                )}
+            </span>
+        </Link>
+    );
 }
